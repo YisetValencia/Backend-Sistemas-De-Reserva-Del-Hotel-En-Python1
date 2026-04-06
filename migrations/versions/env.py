@@ -19,7 +19,6 @@ from entities.reserva import Reserva
 from entities.reserva_servicios import ReservaServicios
 from entities.servicios_adicionales import Servicios_Adicionales
 
-
 config = context.config
 
 if config.config_file_name is not None:
