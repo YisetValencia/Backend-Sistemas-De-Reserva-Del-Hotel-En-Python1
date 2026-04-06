@@ -5,7 +5,7 @@ API de Autenticación - Endpoints para login y autenticación
 from crud.usuario_crud import UsuarioCRUD
 from database.config import get_db
 from fastapi import APIRouter, Depends, HTTPException, status
-from schemas import UsuarioLogin, UsuarioResponse
+from usuario import UsuarioLogin, UsuarioResponse
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
