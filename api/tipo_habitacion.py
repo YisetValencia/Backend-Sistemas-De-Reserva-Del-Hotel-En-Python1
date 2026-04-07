@@ -1,121 +1,120 @@
-from sqlalchemy.orm import Session
+from typing import List, Optional
 from uuid import UUID
-from typing import List
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, ConfigDict
+
+
+try:
+    from .deps import DbSession
+except ImportError:
+    from deps import DbSession
+
+from crud.tipo_habitacion_crud import TipoHabitacionCRUD
 from entities.tipo_habitacion import Tipo_Habitacion
 
+router = APIRouter(prefix="/tipo_habitacion", tags=["tipo_habitacion"])
 
-class TipoHabitacionCRUD:
+
+class TipoHabitacionCreate(BaseModel):
     """
-    Clase proveedora de servicios CRUD para la entidad Tipo_Habitacion.
+    Esquema de validación para la creación de un nuevo tipo de habitación.
 
-    Esta clase contiene métodos estáticos para gestionar la persistencia de las
-    categorías de habitaciones (ej. Sencilla, Doble, Suite) en la base de datos,
-    asegurando la integridad de los datos y evitando duplicidad de nombres.
+    Atributos:
+        nombre_tipo (str): Nombre de la categoría (ej. Suite, Sencilla).
+        descripcion (str): Detalle de las características de la habitación.
+        id_usuario_crea (UUID): Identificador del usuario que realiza el registro.
     """
 
-    @staticmethod
-    def crear_tipo_habitacion(db: Session, tipo: Tipo_Habitacion) -> Tipo_Habitacion:
-        """
-        Registra un nuevo tipo de habitación en la base de datos.
+    nombre_tipo: str
+    descripcion: str
+    id_usuario_crea: UUID
 
-        Realiza validaciones de limpieza de cadenas (strip), verifica que el nombre
-        no sea nulo y que no exista otra categoría con el mismo nombre registrado.
 
-        Args:
-            db (Session): Conexión activa a la base de datos.
-            tipo (Tipo_Habitacion): Instancia de la entidad con los datos a subirse.
+class TipoHabitacionRead(BaseModel):
+    """
+    Esquema de respuesta para la lectura de tipos de habitación.
 
-        Returns:
-            Tipo_Habitacion: El objeto persistido con su ID y fechas generadas.
+    Incluye la configuración para permitir la conversión desde modelos de SQLAlchemy.
+    """
 
-        Raises:
-            ValueError: Si el nombre está vacío o si la categoría ya existe.
-            Exception: En caso de errores técnicos durante el commit (realiza rollback).
-        """
-        if not tipo.nombre_tipo or not tipo.nombre_tipo.strip():
-            raise ValueError("El nombre del tipo de habitación no puede estar vacío")
+    model_config = ConfigDict(from_attributes=True)
 
-        nombre_limpio = tipo.nombre_tipo.strip()
-        existente = (
-            db.query(Tipo_Habitacion)
-            .filter(Tipo_Habitacion.nombre_tipo == nombre_limpio)
-            .first()
-        )
+    id_tipo: UUID
+    nombre_tipo: str
+    descripcion: str
+    id_usuario_crea: UUID
+    id_usuario_edita: Optional[UUID] = None
 
-        if existente:
-            raise ValueError(f"El tipo de habitación '{nombre_limpio}' ya existe")
 
-        try:
-            tipo.nombre_tipo = nombre_limpio
-            db.add(tipo)
-            db.commit()
-            db.refresh(tipo)
-            return tipo
-        except Exception as e:
-            db.rollback()
-            raise e
+# --- ENDPOINTS (RUTAS) ---
 
-    @staticmethod
-    def obtener_tipo_habitacion(db: Session, id_tipo: UUID) -> Tipo_Habitacion:
-        """
-        Busca una categoría de habitación específica por su identificador único.
 
-        Args:
-            db (Session): Conexión activa a la base de datos.
-            id_tipo (UUID): Identificador universal del tipo buscado.
+@router.get("", response_model=List[TipoHabitacionRead])
+def listar_tipos_habitacion(db: DbSession) -> List[Tipo_Habitacion]:
+    """
+    Recupera el listado completo de todos los tipos de habitación registrados.
 
-        Returns:
-            Tipo_Habitacion: El objeto encontrado.
+    Retorna una lista de objetos de tipo habitación con su información básica.
+    """
+    return TipoHabitacionCRUD.obtener_tipos_habitacion(db)
 
-        Raises:
-            ValueError: Si no se encuentra ningún registro con ese ID.
-        """
-        tipo = (
-            db.query(Tipo_Habitacion).filter(Tipo_Habitacion.id_tipo == id_tipo).first()
-        )
-        if not tipo:
-            raise ValueError("Tipo de habitación no encontrado")
-        return tipo
 
-    @staticmethod
-    def obtener_tipos_habitacion(db: Session) -> List[Tipo_Habitacion]:
-        """
-        Recupera el listado completo de categorías de habitación disponibles.
+@router.get("/{id_tipo}", response_model=TipoHabitacionRead)
+def obtener_tipo_habitacion(db: DbSession, id_tipo: UUID) -> Tipo_Habitacion:
+    """
+    Busca y retorna un tipo de habitación específico según su identificador único.
 
-        Args:
-            db (Session): Conexión activa a la base de datos.
+    Args:
+        id_tipo (UUID): El identificador único del tipo de habitación a consultar.
 
-        Returns:
-            List[Tipo_Habitacion]: Una lista con todas las entidades encontradas.
-        """
-        return db.query(Tipo_Habitacion).all()
+    Raises:
+        HTTPException: Error 404 si el tipo de habitación no existe en la base de datos.
+    """
+    try:
+        return TipoHabitacionCRUD.obtener_tipo_habitacion(db, id_tipo)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    @staticmethod
-    def eliminar_tipo_habitacion(db: Session, id_tipo: UUID) -> bool:
-        """
-        Elimina un registro de tipo de habitación del sistema.
 
-        Args:
-            db (Session): Conexión activa a la base de datos.
-            id_tipo (UUID): ID del registro que se desea remover.
+@router.post("", response_model=TipoHabitacionRead, status_code=status.HTTP_201_CREATED)
+def crear_tipo_habitacion(
+    db: DbSession, body: TipoHabitacionCreate
+) -> Tipo_Habit_acion:
+    """
+    Crea un nuevo registro de tipo de habitación en el sistema.
 
-        Returns:
-            bool: True si la operación fue exitosa.
+    Este proceso valida que el nombre no esté duplicado y normaliza los datos de entrada.
 
-        Raises:
-            ValueError: Si el registro no existe.
-            Exception: Si hay un error de integridad (ej. habitaciones vinculadas).
-        """
-        tipo = (
-            db.query(Tipo_Habitacion).filter(Tipo_Habitacion.id_tipo == id_tipo).first()
-        )
-        if not tipo:
-            raise ValueError("Tipo de habitación no encontrado")
+    Args:
+        body (TipoHabitacionCreate): Datos requeridos para la creación del registro.
 
-        try:
-            db.delete(tipo)
-            db.commit()
-            return True
-        except Exception as e:
-            db.rollback()
-            raise e
+    Raises:
+        HTTPException: Error 400 si hay un conflicto de datos o validación fallida.
+    """
+    nuevo_tipo = Tipo_Habitacion(
+        nombre_tipo=body.nombre_tipo,
+        descripcion=body.descripcion,
+        id_usuario_crea=body.id_usuario_crea,
+    )
+
+    try:
+        return TipoHabitacionCRUD.crear_tipo_habitacion(db, nuevo_tipo)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete("/{id_tipo}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_tipo_habitacion(db: DbSession, id_tipo: UUID) -> None:
+    """
+    Elimina un tipo de habitación existente del sistema.
+
+    Args:
+        id_tipo (UUID): Identificador único del registro que se desea eliminar.
+
+    Raises:
+        HTTPException: Error 404 si el registro no pudo ser localizado.
+    """
+    try:
+        TipoHabitacionCRUD.eliminar_tipo_habitacion(db, id_tipo)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
