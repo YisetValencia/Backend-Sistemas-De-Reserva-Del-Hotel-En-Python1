@@ -4,7 +4,7 @@ from entities.tipo_habitacion import Tipo_Habitacion
 from entities.usuario import Usuario
 from sqlalchemy.dialects.postgresql import UUID
 from entities.reserva import Reserva
-from entities.reserva_servicios import Reserva_Servicios
+from entities.reservaservicios import ReservaServicios
 from entities.servicios_adicionales import Servicios_Adicionales
 from entities.habitacion import Habitacion
 import re
@@ -157,8 +157,8 @@ class UsuarioCRUD:
             # Eliminar reservas y sus servicios
             reservas = db.query(Reserva).filter(Reserva.id_usuario == id_usuario).all()
             for reserva in reservas:
-                db.query(Reserva_Servicios).filter(
-                    Reserva_Servicios.id_reserva == reserva.id_reserva
+                db.query(ReservaServicios).filter(
+                    ReservaServicios.id_reserva == reserva.id_reserva
                 ).delete()
             db.query(Reserva).filter(Reserva.id_usuario == id_usuario).delete()
 
