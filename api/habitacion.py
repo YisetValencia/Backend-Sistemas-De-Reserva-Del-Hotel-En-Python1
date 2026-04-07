@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Optional, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from entities.tipo_habitacion import Tipo_Habitacion
 
 router = APIRouter(prefix="/habitaciones", tags=["habitaciones"])
 
@@ -107,12 +108,18 @@ async def crear_habitacion(
 ):
     """Crear un nuevo habitación."""
     try:
+        tipo_habitacion = (
+            db.query(Tipo_Habitacion)
+            .filter(Tipo_Habitacion.id_tipo == habitacion_data.id_tipo)
+            .first()
+        )
         habitacion_crud = HabitacionCRUD(db)
         habitacion = habitacion_crud.crear_habitacion(
             db=db,
             habitacion=Habitacion(
                 numero=habitacion_data.numero,
                 id_tipo=habitacion_data.id_tipo,
+                tipo=tipo_habitacion.nombre_tipo,
                 precio=habitacion_data.precio,
                 id_usuario_crea=habitacion_data.id_usuario_crea,
             ),
