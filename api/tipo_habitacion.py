@@ -77,9 +77,7 @@ def obtener_tipo_habitacion(db: DbSession, id_tipo: UUID) -> Tipo_Habitacion:
 
 
 @router.post("", response_model=TipoHabitacionRead, status_code=status.HTTP_201_CREATED)
-def crear_tipo_habitacion(
-    db: DbSession, body: TipoHabitacionCreate
-) -> Tipo_Habit_acion:
+def crear_tipo_habitacion(db: DbSession, body: TipoHabitacionCreate) -> Tipo_Habitacion:
     """
     Crea un nuevo registro de tipo de habitación en el sistema.
 
