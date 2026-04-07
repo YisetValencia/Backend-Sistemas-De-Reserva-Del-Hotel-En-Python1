@@ -4,7 +4,7 @@ from entities.tipo_habitacion import Tipo_Habitacion
 from entities.usuario import Usuario
 from sqlalchemy.dialects.postgresql import UUID
 from entities.reserva import Reserva
-from entities.reservaservicios import ReservaServicios
+from entities.reserva_servicios import ReservaServicios
 from entities.servicios_adicionales import Servicios_Adicionales
 from entities.habitacion import Habitacion
 import re
