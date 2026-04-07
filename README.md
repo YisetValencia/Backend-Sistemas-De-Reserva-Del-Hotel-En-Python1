@@ -116,7 +116,7 @@ El sistema cubre los siguientes procesos principales:
 ---
 
 ## Notas
-- La lógica de negocio sigue encapsulada en la clase `SistemaGestion` y en los CRUDs.\
+- La lógica de negocio sigue encapsulada en la clase `main.py` y en los CRUDS.\
 - La capa `apis` expone esa lógica vía **FastAPI** para consumo externo.\
 - La capa `auth` maneja cifrado de contraseñas y emisión/verificación de **JWT**.\
 -   Se mantiene separación clara entre entidades, persistencia y presentación. 
