@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
 from database.config import create_tables
 
 from api import servicios_adicionales, usuario, habitacion, reserva, tipo_habitacion, reserva_servicios
