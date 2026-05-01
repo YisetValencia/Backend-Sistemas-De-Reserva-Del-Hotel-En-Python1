@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import UUID
 from entities.tipo_habitacion import Tipo_Habitacion
-
+from typing import List, Optional
 
 class TipoHabitacionCRUD:
     """
@@ -52,6 +52,27 @@ class TipoHabitacionCRUD:
         )
         if not tipo:
             raise ValueError("Tipo de habitación no encontrado")
+        return tipo
+
+    @staticmethod
+    def actualizar_tipo_habitacion(
+        db, id_tipo: UUID, id_usuario_edita: UUID, **kwargs: object
+    ) -> Optional[Tipo_Habitacion]:
+        
+        tipo = TipoHabitacionCRUD.obtener_tipo_habitacion(db, id_tipo)
+        
+        if not tipo:
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(tipo, str(key)) and str(key) != "id_tipo":
+                setattr(tipo, str(key), value)
+
+        tipo.id_usuario_edita = id_usuario_edita
+
+        db.commit()
+        db.refresh(tipo)
+
         return tipo
 
     @staticmethod

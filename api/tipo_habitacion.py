@@ -46,6 +46,20 @@ class TipoHabitacionRead(BaseModel):
     id_usuario_edita: Optional[UUID] = None
 
 
+class TipoHabitacionUpdate(BaseModel):
+    """
+    Modelo de datos para la creación de un servicio adicional.
+
+    Atributos:
+        nombre_servicio (str): Nombre del servicio adicional.
+        precio (float): Precio asociado al servicio.
+        descripcion (str): Descripción detallada del servicio.
+        id_usuario_crea (UUID): Identificador del usuario que crea el servicio.
+    """
+    nombre_tipo: Optional[str] = None
+    descripcion: Optional[str] = None
+    id_usuario_edita: UUID
+
 # --- ENDPOINTS (RUTAS) ---
 
 
@@ -76,8 +90,44 @@ def obtener_tipo_habitacion(db: DbSession, id_tipo: UUID) -> Tipo_Habitacion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
+@router.put("/{id_tipo}", response_model=TipoHabitacionRead)
+def actualizar_tipo_habitacion(
+    db: DbSession, id_tipo: UUID, body: TipoHabitacionUpdate
+) -> TipoHabitacionRead:
+    """
+    Actualiza un tipo de habitación existente.
+
+    Args:
+        db (DbSession): Sesión de base de datos.
+        id_tipo (UUID): Identificador del tipo a actualizar.
+        body (TipoHabitacionUpdate): Datos a actualizar.
+
+    Raises:
+        HTTPException: Si el tipo no existe.
+
+    Returns:
+        TipoHabitacionRead: Tipo actualizado.
+    """
+
+    id_edita = body.id_usuario_edita
+    data = body.model_dump(exclude_unset=True, exclude={"id_usuario_edita"})
+
+    tipo = TipoHabitacionCRUD.actualizar_tipo_habitacion(
+        db, id_tipo, id_usuario_edita=id_edita, **data
+    )
+
+    if not tipo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tipo de habitación no encontrado",
+        )
+
+    return tipo
+
 @router.post("", response_model=TipoHabitacionRead, status_code=status.HTTP_201_CREATED)
-def crear_tipo_habitacion(db: DbSession, body: TipoHabitacionCreate) -> Tipo_Habitacion:
+def crear_tipo_habitacion(
+    db: DbSession, body: TipoHabitacionCreate
+) -> Tipo_Habitacion:
     """
     Crea un nuevo registro de tipo de habitación en el sistema.
 
