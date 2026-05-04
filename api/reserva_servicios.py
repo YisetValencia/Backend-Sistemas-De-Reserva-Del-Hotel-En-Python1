@@ -1,9 +1,6 @@
 """
-Módulo de API Router para la gestión de relaciones entre Reservas y Servicios.
-
-Este módulo define los endpoints de FastAPI para realizar operaciones CRUD sobre la
-entidad asociativa 'ReservaServicios', permitiendo vincular servicios específicos
-a reservas existentes mediante sus respectivos identificadores únicos (UUID).
+Router para la gestión de ReservaServicios.
+Cada operación recalcula automáticamente el costo_total de la reserva.
 """
 
 from typing import List
@@ -11,82 +8,57 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from pydantic import BaseModel, ConfigDict
 
 from database.config import get_db
-from entities.reserva_servicios import ReservaServicios
 from crud.reserva_servicios_crud import ReservaServiciosCRUD
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/reserva-servicios", tags=["reserva-servicios"])
 
 
-class ReservaServicioBase(BaseModel):
-    """
-    Esquema Pydantic para la transferencia de datos de Reserva-Servicio.
 
-    Attributes:
-        id_reserva (UUID): Identificador único de la reserva.
-        id_servicio (UUID): Identificador único del servicio.
-    """
-
+class ReservaServicioCreate(BaseModel):
     id_reserva: UUID
     id_servicio: UUID
+    cantidad: int
 
 
-class ReservaServicioResponse(ReservaServicioBase):
-    """
-    Esquema de respuesta para las operaciones de Reserva-Servicio.
-    Habilita la compatibilidad con modelos de SQLAlchemy (ORM).
-    """
-
-    class Config:
-        from_attributes = True
+class ReservaServicioUpdate(BaseModel):
+    cantidad: int
 
 
-def get_crud(db: Session = Depends(get_db)):
-    """
-    Factory function para obtener una instancia del CRUD de ReservaServicios.
+class ReservaServicioResponse(BaseModel):
+    id_reserva: UUID
+    id_servicio: UUID
+    cantidad: int
 
-    Args:
-        db (Session): Sesión de base de datos inyectada.
-
-    Returns:
-        ReservaServiciosCRUD: Instancia con la lógica de persistencia.
-    """
-    return ReservaServiciosCRUD(db)
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post(
-    "/", response_model=ReservaServicioResponse, status_code=status.HTTP_201_CREATED
+    "/",
+    response_model=ReservaServicioResponse,
+    status_code=status.HTTP_201_CREATED,
 )
-async def asignar_servicio_a_reserva(
-    datos: ReservaServicioBase,
+async def agregar_servicio(
+    datos: ReservaServicioCreate,
     db: Session = Depends(get_db),
-    crud: ReservaServiciosCRUD = Depends(get_crud),
 ):
-    """
-    Crea una nueva vinculación entre una reserva y un servicio.
-
-    Args:
-        datos (ReservaServicioBase): Objeto con id_reserva e id_servicio.
-        db (Session): Dependencia de la sesión de base de datos.
-        crud (ReservaServiciosCRUD): Dependencia de la lógica de negocio.
-
-    Raises:
-        HTTPException: 400 si hay un error de integridad (FK inexistente).
-        HTTPException: 500 para errores internos no controlados.
-
-    Returns:
-        ReservaServicios: El registro creado en la base de datos.
-    """
+    """Agrega un servicio a una reserva y recalcula el costo_total."""
     try:
-        nueva_relacion = ReservaServicios(**datos.model_dump())
-        return crud.crear_reserva_servicio(nueva_relacion)
+        return ReservaServiciosCRUD.agregar_servicio(
+            db,
+            id_reserva=datos.id_reserva,
+            id_servicio=datos.id_servicio,
+            cantidad=datos.cantidad,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error de integridad: La reserva o el servicio no existen en la base de datos.",
+            detail="La reserva o el servicio no existen en la base de datos.",
         )
     except Exception as e:
         db.rollback()
@@ -96,44 +68,51 @@ async def asignar_servicio_a_reserva(
         )
 
 
-@router.get("/reserva/{id_reserva}", response_model=List[ReservaServicioResponse])
+@router.get(
+    "/reserva/{id_reserva}",
+    response_model=List[ReservaServicioResponse],
+)
 async def obtener_servicios_de_reserva(
-    id_reserva: UUID, crud: ReservaServiciosCRUD = Depends(get_crud)
+    id_reserva: UUID,
+    db: Session = Depends(get_db),
 ):
-    """
-    Obtiene la lista de todos los servicios asociados a una reserva específica.
-
-    Args:
-        id_reserva (UUID): El ID de la reserva a consultar.
-        crud (ReservaServiciosCRUD): Instancia de la capa CRUD.
-
-    Returns:
-        List[ReservaServicioResponse]: Lista de objetos vinculados.
-    """
-    return crud.obtener_servicios_por_reserva(id_reserva)
+    """Obtiene todos los servicios asociados a una reserva."""
+    return ReservaServiciosCRUD.obtener_servicios_reserva(db, id_reserva)
 
 
-@router.delete("/{id_reserva}/{id_servicio}")
-async def desvincular_servicio(
-    id_reserva: UUID, id_servicio: UUID, crud: ReservaServiciosCRUD = Depends(get_crud)
+@router.patch(
+    "/{id_reserva}/{id_servicio}",
+    response_model=ReservaServicioResponse,
+)
+async def actualizar_cantidad_servicio(
+    id_reserva: UUID,
+    id_servicio: UUID,
+    datos: ReservaServicioUpdate,
+    db: Session = Depends(get_db),
 ):
-    """
-    Elimina la relación existente entre una reserva y un servicio.
-
-    Args:
-        id_reserva (UUID): ID de la reserva.
-        id_servicio (UUID): ID del servicio.
-        crud (ReservaServiciosCRUD): Instancia de la capa CRUD.
-
-    Raises:
-        HTTPException: 404 si la relación no existe en la base de datos.
-
-    Returns:
-        dict: Mensaje de confirmación de éxito.
-    """
-    if not crud.eliminar_relacion(id_reserva, id_servicio):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="La relación entre esta reserva y este servicio no existe",
+    """Actualiza la cantidad de un servicio en una reserva y recalcula el costo_total."""
+    try:
+        return ReservaServiciosCRUD.actualizar_cantidad(
+            db,
+            id_reserva=id_reserva,
+            id_servicio=id_servicio,
+            cantidad=datos.cantidad,
         )
-    return {"exito": True, "mensaje": "Servicio desvinculado con éxito"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete(
+    "/{id_reserva}/{id_servicio}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def eliminar_servicio(
+    id_reserva: UUID,
+    id_servicio: UUID,
+    db: Session = Depends(get_db),
+):
+    """Elimina un servicio de una reserva y recalcula el costo_total."""
+    try:
+        ReservaServiciosCRUD.eliminar_servicio(db, id_reserva, id_servicio)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

@@ -1,95 +1,108 @@
-"""
-Módulo CRUD para la gestión de la tabla asociativa ReservaServicios.
-
-Este módulo provee la lógica de persistencia para vincular servicios a reservas,
-permitiendo la creación, consulta y eliminación de estas relaciones en la base de datos.
-"""
-
 from sqlalchemy.orm import Session
-from uuid import UUID
-from typing import List
+from sqlalchemy.dialects.postgresql import UUID
 from entities.reserva_servicios import ReservaServicios
+from crud.reserva_crud import ReservaCRUD
 
 
 class ReservaServiciosCRUD:
     """
-    Clase encargada de las operaciones de base de datos para ReservaServicios.
+    CRUD para ReservaServicios.
 
-    Provee métodos para gestionar la relación entre las reservas y los
-    servicios adicionales mediante SQLAlchemy.
-
-    Attributes:
-        db (Session): Sesión activa de SQLAlchemy para realizar transacciones.
+    Cada operación (crear, actualizar, eliminar) recalcula automáticamente
+    el costo_total de la reserva padre.
     """
 
-    def __init__(self, db: Session):
-        """
-        Inicializa el CRUD con una sesión de base de datos.
-
-        Args:
-            db (Session): Instancia de la sesión de base de datos.
-        """
-        self.db = db
-
-    def crear_reserva_servicio(
-        self, reserva_servicio: ReservaServicios
+    @staticmethod
+    def agregar_servicio(
+        db: Session,
+        id_reserva: UUID,
+        id_servicio: UUID,
+        cantidad: int,
     ) -> ReservaServicios:
-        """
-        Registra una nueva relación entre una reserva y un servicio.
+        if cantidad < 1:
+            raise ValueError("La cantidad debe ser mayor a 0")
 
-        Args:
-            reserva_servicio (ReservaServicios): Instancia de la entidad a persistir.
+        # Si ya existe el servicio en la reserva, sumar cantidad
+        existente = db.query(ReservaServicios).filter_by(
+            id_reserva=id_reserva,
+            id_servicio=id_servicio,
+        ).first()
 
-        Returns:
-            ReservaServicios: La instancia persistida y refrescada con los datos de la DB.
-        """
-        self.db.add(reserva_servicio)
-        self.db.commit()
-        self.db.refresh(reserva_servicio)
-        return reserva_servicio
-
-    def obtener_servicios_por_reserva(self, id_reserva: UUID) -> List[ReservaServicios]:
-        """
-        Consulta todos los servicios asociados a una reserva específica.
-
-        Args:
-            id_reserva (UUID): Identificador único de la reserva.
-
-        Returns:
-            List[ReservaServicios]: Lista de objetos que vinculan la reserva con servicios.
-        """
-        return (
-            self.db.query(ReservaServicios)
-            .filter(ReservaServicios.id_reserva == id_reserva)
-            .all()
-        )
-
-    def eliminar_relacion(self, id_reserva: UUID, id_servicio: UUID) -> bool:
-        """
-        Elimina el vínculo específico entre una reserva y un servicio.
-
-        Busca la entrada que coincida con ambos identificadores. Si existe,
-        procede con la eliminación física del registro.
-
-        Args:
-            id_reserva (UUID): ID de la reserva involucrada.
-            id_servicio (UUID): ID del servicio a desvincular.
-
-        Returns:
-            bool: True si la relación fue eliminada, False si no se encontró el registro.
-        """
-        rs = (
-            self.db.query(ReservaServicios)
-            .filter(
-                ReservaServicios.id_reserva == id_reserva,
-                ReservaServicios.id_servicio == id_servicio,
+        if existente:
+            existente.cantidad += cantidad
+            db.commit()
+            db.refresh(existente)
+            rs = existente
+        else:
+            rs = ReservaServicios(
+                id_reserva=id_reserva,
+                id_servicio=id_servicio,
+                cantidad=cantidad,
             )
-            .first()
-        )
+            db.add(rs)
+            db.commit()
+            db.refresh(rs)
 
+       
+        ReservaCRUD.recalcular_costo_total(db, id_reserva)
+        return rs
+
+    @staticmethod
+    def obtener_servicios_reserva(db: Session, id_reserva: UUID):
+        return db.query(ReservaServicios).filter(
+            ReservaServicios.id_reserva == id_reserva
+        ).all()
+
+    @staticmethod
+    def obtener_servicio(
+        db: Session, id_reserva: UUID, id_servicio: UUID
+    ) -> ReservaServicios:
+        rs = db.query(ReservaServicios).filter_by(
+            id_reserva=id_reserva,
+            id_servicio=id_servicio,
+        ).first()
         if not rs:
-            return False
+            raise ValueError("Servicio no encontrado en la reserva")
+        return rs
 
-        self.db.delete(rs)
-        self.db.commit()
-        return True
+    @staticmethod
+    def actualizar_cantidad(
+        db: Session,
+        id_reserva: UUID,
+        id_servicio: UUID,
+        cantidad: int,
+    ) -> ReservaServicios:
+        if cantidad < 1:
+            raise ValueError("La cantidad debe ser mayor a 0")
+
+        rs = db.query(ReservaServicios).filter_by(
+            id_reserva=id_reserva,
+            id_servicio=id_servicio,
+        ).first()
+        if not rs:
+            raise ValueError("Servicio no encontrado en la reserva")
+
+        rs.cantidad = cantidad
+        db.commit()
+        db.refresh(rs)
+
+       
+        ReservaCRUD.recalcular_costo_total(db, id_reserva)
+        return rs
+
+    @staticmethod
+    def eliminar_servicio(
+        db: Session, id_reserva: UUID, id_servicio: UUID
+    ) -> None:
+        rs = db.query(ReservaServicios).filter_by(
+            id_reserva=id_reserva,
+            id_servicio=id_servicio,
+        ).first()
+        if not rs:
+            raise ValueError("Servicio no encontrado en la reserva")
+
+        db.delete(rs)
+        db.commit()
+
+       
+        ReservaCRUD.recalcular_costo_total(db, id_reserva)

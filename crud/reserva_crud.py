@@ -2,32 +2,50 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import UUID
 from entities.reserva import Reserva
 from entities.reserva_servicios import ReservaServicios
+from entities.habitacion import Habitacion
+from entities.servicios_adicionales import Servicios_Adicionales
 
 
 class ReservaCRUD:
     """
-    Módulo CRUD para la entidad Reserva.
+    CRUD para Reserva con cálculo automático de costo_total.
 
-    Gestiona las reservas realizadas por los clientes, validando fechas
-    y asociando correctamente a cliente y habitación.
-
-    Funciones principales:
-        - crear_reserva(db: Session, reserva: Reserva) -> Reserva
-        - obtener_reserva(db: Session, id_reserva: UUID) -> Reserva
-        - obtener_reservas(db: Session) -> List[Reserva]
-        - actualizar_reserva(db: Session, id_reserva: UUID, **kwargs) -> Reserva
-        - eliminar_reserva(db: Session, id_reserva: UUID) -> bool
-        - obtener_reservas_activas(db: Session) -> List[Reserva]
-        - actualizar_costo_total(db: Session, id_reserva: UUID, monto_extra: float) -> Reserva
-
-    Notas:
-        - Se valida que la fecha de entrada en este caso sea menor a la de salida.
-        - Al cancelar una reserva se recomienda actualizar el estado de la habitación.
+    costo_total = (noches × precio_habitación) + Σ(precio_servicio × cantidad)
     """
 
+    
     @staticmethod
-    def crear_reserva(db: Session, reserva: Reserva):
+    def _calcular_costo(db: Session, reserva: Reserva) -> float:
+        """
+        Calcula el costo total de una reserva:
+          - noches × precio de la habitación
+          + suma de (precio_servicio × cantidad) por cada ReservaServicios
+        """
+        habitacion = db.query(Habitacion).filter(
+            Habitacion.id_habitacion == reserva.id_habitacion
+        ).first()
 
+        precio_hab = habitacion.precio if habitacion else 0.0
+        noches = reserva.noches or 0
+        costo_hab = noches * precio_hab
+
+        servicios = db.query(ReservaServicios).filter(
+            ReservaServicios.id_reserva == reserva.id_reserva
+        ).all()
+
+        costo_servicios = 0.0
+        for rs in servicios:
+            servicio = db.query(Servicios_Adicionales).filter(
+                Servicios_Adicionales.id_servicio == rs.id_servicio
+            ).first()
+            if servicio:
+                costo_servicios += servicio.precio * rs.cantidad
+
+        return round(costo_hab + costo_servicios, 2)
+
+   
+    @staticmethod
+    def crear_reserva(db: Session, reserva: Reserva) -> Reserva:
         if not reserva.id_usuario or not reserva.id_habitacion:
             raise ValueError(
                 "La reserva debe estar asociada a un cliente y una habitación"
@@ -36,16 +54,31 @@ class ReservaCRUD:
         if reserva.fecha_entrada >= reserva.fecha_salida:
             raise ValueError("La fecha de entrada debe ser anterior a la de salida")
 
+       
         delta = reserva.fecha_salida - reserva.fecha_entrada
         reserva.noches = delta.days
 
+        
+        if not reserva.estado_reserva:
+            reserva.estado_reserva = "Activa"
+
+       
         db.add(reserva)
+        db.flush()
+
+       
+        habitacion = db.query(Habitacion).filter(
+            Habitacion.id_habitacion == reserva.id_habitacion
+        ).first()
+        precio_hab = habitacion.precio if habitacion else 0.0
+        reserva.costo_total = round(reserva.noches * precio_hab, 2)
+
         db.commit()
         db.refresh(reserva)
         return reserva
 
     @staticmethod
-    def obtener_reserva(db: Session, id_reserva: UUID):
+    def obtener_reserva(db: Session, id_reserva: UUID) -> Reserva:
         reserva = db.query(Reserva).filter(Reserva.id_reserva == id_reserva).first()
         if not reserva:
             raise ValueError("Reserva no encontrada")
@@ -56,7 +89,7 @@ class ReservaCRUD:
         return db.query(Reserva).all()
 
     @staticmethod
-    def actualizar_reserva(db: Session, id_reserva: UUID, **kwargs):
+    def actualizar_reserva(db: Session, id_reserva: UUID, **kwargs) -> Reserva:
         reserva = db.query(Reserva).filter(Reserva.id_reserva == id_reserva).first()
         if not reserva:
             raise ValueError("Reserva no encontrada")
@@ -76,12 +109,15 @@ class ReservaCRUD:
             delta = reserva.fecha_salida - reserva.fecha_entrada
             reserva.noches = delta.days
 
+       
+        reserva.costo_total = ReservaCRUD._calcular_costo(db, reserva)
+
         db.commit()
         db.refresh(reserva)
         return reserva
 
     @staticmethod
-    def eliminar_reserva(db: Session, id_reserva: UUID):
+    def eliminar_reserva(db: Session, id_reserva: UUID) -> None:
         reserva = db.query(Reserva).filter(Reserva.id_reserva == id_reserva).first()
         if not reserva:
             raise ValueError("La reserva no existe.")
@@ -98,12 +134,16 @@ class ReservaCRUD:
         return db.query(Reserva).filter(Reserva.estado_reserva == "Activa").all()
 
     @staticmethod
-    def actualizar_costo_total(db: Session, id_reserva, monto_extra: float):
+    def recalcular_costo_total(db: Session, id_reserva) -> Reserva:
+        """
+        Recalcula y persiste el costo_total de una reserva.
+        Llamar siempre que se agregue, edite o elimine un ReservaServicios.
+        """
         reserva = db.query(Reserva).filter_by(id_reserva=id_reserva).first()
         if not reserva:
             raise ValueError("Reserva no encontrada")
 
-        reserva.costo_total += monto_extra
-        db.commit()  # <--- Crucial
+        reserva.costo_total = ReservaCRUD._calcular_costo(db, reserva)
+        db.commit()
         db.refresh(reserva)
         return reserva
