@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
+from fastapi.middleware.cors import CORSMiddleware
 from database.config import create_tables
 
 from api import servicios_adicionales, usuario, habitacion, reserva, tipo_habitacion, reserva_servicios
@@ -22,6 +22,17 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="API", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:4200",
+        "http://127.0.0.1:4200"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(habitacion.router)
 app.include_router(reserva_servicios.router)
