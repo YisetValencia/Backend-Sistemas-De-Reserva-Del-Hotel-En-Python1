@@ -1,37 +1,16 @@
 """
 Puntos finales de la API para la gestión de habitaciones de hotel.
-Este módulo define el router de FastAPI para operaciones CRUD y consultas relacionadas con habitaciones,
-incluyendo creación, obtención, actualización, eliminación, cambio de estado de disponibilidad y filtrado
-por tipo o disponibilidad.
-Endpoints:
-    - GET /habitaciones/: Obtener todas las habitaciones.
-    - GET /habitaciones/{id_habitacion}: Obtener una habitación por su UUID.
-    - POST /habitaciones/: Crear una nueva habitación.
-    - PUT /habitaciones/{id_habitacion}: Actualizar una habitación existente.
-    - DELETE /habitaciones/{id_habitacion}: Eliminar una habitación por su UUID.
-    - PATCH /habitaciones/{id_habitacion}/cambiar-disponible: Cambiar el estado de disponibilidad de una habitación.
-    - GET /habitaciones/tipo/{tipo}: Obtener habitaciones filtradas por tipo.
-    - GET /habitaciones/habitacion/disponibles: Obtener todas las habitaciones disponibles.
-    - GET /habitaciones/numero/{numero}: Obtener una habitación por su número.
-Dependencias:
-    - FastAPI
-    - SQLAlchemy ORM
-    - Módulos personalizados de CRUD y esquemas
-Excepciones:
-    - HTTPException: Para diversas condiciones de error como no encontrado, solicitud incorrecta o errores internos.
 """
 
-from typing import List
+from typing import List, Optional, Any
 from uuid import UUID
 from datetime import datetime
 from entities.habitacion import Habitacion
 from crud.habitacion_crud import HabitacionCRUD
 from database.config import get_db
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import Optional, Any
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from entities.tipo_habitacion import Tipo_Habitacion
 
 router = APIRouter(prefix="/habitaciones", tags=["habitaciones"])
 
@@ -45,6 +24,7 @@ class RespuestaAPI(BaseModel):
 class HabitacionBase(BaseModel):
     numero: Optional[int] = None
     id_tipo: Optional[UUID] = None
+    tipo: Optional[str] = None
     precio: Optional[float] = None
     disponible: bool = True
     id_usuario_crea: Optional[UUID] = None
@@ -57,6 +37,7 @@ class HabitacionCreate(HabitacionBase):
 class HabitacionUpdate(BaseModel):
     numero: Optional[int] = None
     id_tipo: Optional[UUID] = None
+    tipo: Optional[str] = None
     precio: Optional[float] = None
     disponible: Optional[bool] = None
     id_usuario_edita: Optional[UUID] = None
@@ -77,7 +58,6 @@ class HabitacionResponse(HabitacionBase):
 async def obtener_habitaciones(
     skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 ):
-    """Obtener todos las habitaciones."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitaciones = habitacion_crud.obtener_habitaciones(db)
@@ -91,7 +71,6 @@ async def obtener_habitaciones(
 
 @router.get("/estado", response_model=List[HabitacionResponse])
 async def obtener_habitaciones_disponibles(db: Session = Depends(get_db)):
-    """Obtener todas las habitaciones disponibles."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitaciones = habitacion_crud.obtener_habitaciones_disponibles(db)
@@ -100,27 +79,20 @@ async def obtener_habitaciones_disponibles(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post(
-    "/", response_model=HabitacionResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/", response_model=HabitacionResponse, status_code=status.HTTP_201_CREATED)
 async def crear_habitacion(
     habitacion_data: HabitacionCreate, db: Session = Depends(get_db)
 ):
-    """Crear un nuevo habitación."""
     try:
-        tipo_habitacion = (
-            db.query(Tipo_Habitacion)
-            .filter(Tipo_Habitacion.id_tipo == habitacion_data.id_tipo)
-            .first()
-        )
         habitacion_crud = HabitacionCRUD(db)
         habitacion = habitacion_crud.crear_habitacion(
             db=db,
             habitacion=Habitacion(
                 numero=habitacion_data.numero,
                 id_tipo=habitacion_data.id_tipo,
-                tipo=tipo_habitacion.nombre_tipo,
+                tipo=habitacion_data.tipo,        # ← agregado
                 precio=habitacion_data.precio,
+                disponible=habitacion_data.disponible,
                 id_usuario_crea=habitacion_data.id_usuario_crea,
             ),
         )
@@ -140,7 +112,6 @@ async def actualizar_habitacion(
     habitacion_data: HabitacionUpdate,
     db: Session = Depends(get_db),
 ):
-    """Actualizar una habitación existente."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitacion_existente = habitacion_crud.obtener_habitacion(db, id_habitacion)
@@ -168,7 +139,6 @@ async def actualizar_habitacion(
 
 @router.delete("/{id_habitacion}", response_model=RespuestaAPI)
 async def eliminar_habitacion(id_habitacion: UUID, db: Session = Depends(get_db)):
-    """Eliminar una habitación."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitacion_existente = habitacion_crud.obtener_habitacion(db, id_habitacion)
@@ -195,7 +165,6 @@ async def eliminar_habitacion(id_habitacion: UUID, db: Session = Depends(get_db)
 
 @router.patch("/{id_habitacion}/cambiar-disponible", response_model=HabitacionResponse)
 async def cambiar_estado_habitacion(id_habitacion: UUID, db: Session = Depends(get_db)):
-    """Cambiar el estado de una habitación."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitacion = habitacion_crud.cambiar_estado_habitacion(db, id_habitacion)
@@ -206,10 +175,7 @@ async def cambiar_estado_habitacion(id_habitacion: UUID, db: Session = Depends(g
         return habitacion
     except ValueError as e:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -222,7 +188,6 @@ async def cambiar_estado_habitacion(id_habitacion: UUID, db: Session = Depends(g
 
 @router.get("/tipo/{tipo}", response_model=List[HabitacionResponse])
 async def obtener_habitaciones_por_tipo(tipo: str, db: Session = Depends(get_db)):
-    """Obtener habitaciones por tipo."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitaciones = habitacion_crud.obtener_habitaciones_por_tipo(db, tipo)
@@ -238,7 +203,6 @@ async def obtener_habitaciones_por_tipo(tipo: str, db: Session = Depends(get_db)
 
 @router.get("/numero/{numero}", response_model=HabitacionResponse)
 async def obtener_habitacion_por_numero(numero: int, db: Session = Depends(get_db)):
-    """Obtener habitacion por número."""
     try:
         habitacion_crud = HabitacionCRUD(db)
         habitaciones = habitacion_crud.obtener_habitacion_por_numero(db, numero)
@@ -252,7 +216,6 @@ async def obtener_habitacion_por_numero(numero: int, db: Session = Depends(get_d
 
 @router.get("/{id_habitacion}", response_model=HabitacionResponse)
 async def obtener_habitacion(id_habitacion: UUID, db: Session = Depends(get_db)):
-    """Obtener una habitación por ID."""
     try:
         habitacio_crud = HabitacionCRUD(db)
         habitacion = habitacio_crud.obtener_habitacion(db, id_habitacion)
